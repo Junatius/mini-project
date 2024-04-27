@@ -17,6 +17,10 @@ class Message
     'Missing token'
   end
 
+  def self.forbidden
+    'Forbidden'
+  end
+
   def self.unauthorized
     'Unauthorized request'
   end
