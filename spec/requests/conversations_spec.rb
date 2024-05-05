@@ -11,85 +11,84 @@ RSpec.describe 'Conversations API', type: :request do
   let!(:samid_headers) { valid_headers(samid.id) }
 
   describe 'GET /conversations' do
-    context 'when user have no conversation' do
-      # make HTTP get request before each example
+    context 'when user has no conversation' do
       before { get '/conversations', params: {}, headers: dimas_headers }
 
       it 'returns empty data with 200 code' do
         expect(response_body).to eq({ "data" => [] })
-
       end
     end
 
-    context 'when user have conversations' do
-      # TODOS: Populate database with conversation of current user
-
+    context 'when user has conversations' do
       before do
-        create_list(:conversation, 5, sender: dimas)
+        create_list(:conversation, 5, sender: dimas) do |conversation|
+          create(:chat, conversation: conversation, sender: dimas)
+          create(:user_conversation, conversation: conversation, user: dimas)
+        end
         get '/conversations', params: {}, headers: dimas_headers
       end
 
       it 'returns list conversations of current user' do
-        # Note `response_data` is a custom helper
-        # to get data from parsed JSON responses in spec/support/request_spec_helper.rb
-
         expect(response_data).not_to be_empty
         expect(response_data.size).to eq(5)
       end
 
       it 'returns status code 200 with correct response' do
-        expect_response(
-          :ok,
-          data: [
+        expect(response_body).to eq({
+          "data" => [
             {
-              id: Integer,
-              with_user: {
-                id: Integer,
-                name: String,
-                photo_url: String
-              },
-              last_message: {
-                id: Integer,
-                sender: {
-                  id: Integer,
-                  name: String
+              "id" => Integer,
+              "last_message" => {
+                "id" => Integer,
+                "sender" => {
+                  "id" => Integer,
+                  "name" => String
                 },
-                sent_at: String
+                "sent_at" => String
               },
-              unread_count: Integer
+              "unread_count" => Integer,
+              "with_user" => {
+                "id" => Integer,
+                "name" => String,
+                "photo_url" => String
+              }
             }
           ]
-        )
+        })
       end
+
     end
   end
 
   describe 'GET /conversations/:id' do
-    let!(:convo_id) { create(:conversation, sender: dimas).id }
+    let!(:convo_id) do
+      convo = create(:conversation, sender: dimas)
+      create(:chat, conversation: convo, sender: dimas)
+      create(:user_conversation, conversation: convo, user: dimas)
+      convo.id
+    end
 
     context 'when the record exists' do
       before do
-        @convo_id = create(:conversation, sender: dimas).id
-        get "/conversations/#{@convo_id}", params: {}, headers: dimas_headers
+        get "/conversations/#{convo_id}", params: {}, headers: dimas_headers
       end
-
 
       it 'returns conversation detail' do
-        expect_response(
-          :ok,
-          data: {
-            id: Integer,
-            with_user: {
-              id: Integer,
-              name: String,
-              photo_url: String
+        expect(response_body).to eq({
+          "data" => {
+            "id" => Integer,
+            "with_user" => {
+              "id" => Integer,
+              "name" => String,
+              "photo_url" => String
             }
           }
-        )
+        })
       end
+
     end
 
-    context 'when current user access other user conversation' do
+    context 'when current user accesses other user conversation' do
       before do
         @convo_id = create(:conversation, sender: dimas).id
         get "/conversations/#{@convo_id}", params: {}, headers: samid_headers

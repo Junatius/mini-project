@@ -1,59 +1,42 @@
 class ConversationsController < ApplicationController
-  before_action :authorize_request
   before_action :set_conversation, only: [:show]
 
+  # GET /conversations
   def index
-    conversations = @current_user.conversations.includes(:chats).map { |conv| format_conversation(conv) }
-    json_response(conversations)
+    @conversations = current_user.conversations.map do |conversation|
+      {
+        id: conversation.id,
+        with_user: {
+          id: conversation.receiver.id,
+          name: conversation.receiver.name,
+          photo_url: conversation.receiver.photo_url
+        },
+        last_message: conversation.chats.last ? {
+          id: conversation.chats.last.id,
+          sender: {
+            id: conversation.chats.last.sender.id,
+            name: conversation.chats.last.sender.name
+          },
+          sent_at: conversation.chats.last.created_at.to_s
+        } : nil,
+        unread_count: conversation.user_conversations.find_by(user: current_user).unread_count
+      }
+    end
+    json_response(@conversations)
   end
 
 
+  # GET /conversations/:id
   def show
-    if current_user_can_access_conversation?
-      json_response(format_conversation(@conversation))
-    else
-      render json: { error: Message.forbidden }, status: :forbidden
-    end
+    json_response(format_conversation(@conversation))
   end
 
   private
 
-  def set_conversation
-    @conversation = Conversation.find(params[:id])
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: Message.not_found('Conversation') }, status: :not_found
-  end
-
-  def authorize_request
-    @current_user = AuthorizeApiRequest.new(request.headers).call[:user]
-    render json: { error: Message.unauthorized }, status: :unauthorized unless @current_user
-  end
-
-  def current_user_can_access_conversation?
-    @conversation.sender == @current_user || @conversation.receiver == @current_user
-  end
-
   def format_conversation(conversation)
-    formatted_conversation = {
-      id: conversation.id,
-      with_user: format_user(conversation.sender == @current_user ? conversation.receiver : conversation.sender),
-      unread_count: conversation.unread_count
-    }
-
-    last_chat = conversation.chats.last
-    formatted_conversation[:last_message] = format_last_message(last_chat) if last_chat
-
-    formatted_conversation
-  end
-
-  def format_last_message(conversation)
-    last_chat = conversation.chats.last
-    return unless last_chat
-
     {
-      id: last_chat.id,
-      sender: format_user(last_chat.sender),
-      sent_at: last_chat.created_at
+      id: conversation.id,
+      with_user: format_user(conversation.receiver)
     }
   end
 
@@ -65,4 +48,14 @@ class ConversationsController < ApplicationController
     }
   end
 
+  def set_conversation
+    @conversation = Conversation.find(params[:id])
+    authorize_user!
+  end
+
+  def authorize_user!
+    unless @conversation.sender == current_user || @conversation.receiver == current_user
+      render json: { error: Message.forbidden }, status: :forbidden
+    end
+  end
 end

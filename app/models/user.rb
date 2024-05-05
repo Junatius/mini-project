@@ -1,10 +1,11 @@
 class User < ApplicationRecord
+  has_many :sent_conversations, class_name: 'Conversation', foreign_key: 'sender_id', dependent: :destroy
+  has_many :received_conversations, class_name: 'Conversation', foreign_key: 'receiver_id', dependent: :destroy
   has_many :sent_chats, class_name: 'Chat', foreign_key: 'sender_id', dependent: :destroy
-  has_many :conversations_as_sender, class_name: 'Conversation', foreign_key: 'sender_id', dependent: :destroy
-  has_many :conversations_as_receiver, class_name: 'Conversation', foreign_key: 'receiver_id', dependent: :destroy
+  has_many :user_conversations
 
   def conversations
-    Conversation.where(id: conversations_as_sender.pluck(:id) + conversations_as_receiver.pluck(:id))
+    Conversation.where("sender_id = ? OR receiver_id = ?", self.id, self.id)
   end
 
   # encrypt password

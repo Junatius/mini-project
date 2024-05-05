@@ -1,84 +1,74 @@
 class ChatsController < ApplicationController
-  before_action :authorize_request
-  before_action :set_conversation, only: [:index, :create]
+  before_action :set_conversation, only: [:index]
+  before_action :authorize_user!, only: [:index]
 
+  # GET /conversations/:conversation_id/messages
   def index
-    messages = @conversation.chats.order(created_at: :asc)
-    json_response(messages.map { |message| format_message(message) })
+    @chats = @conversation.chats.map do |chat|
+      {
+        id: chat.id,
+        message: chat.message,
+        sender: {
+          id: chat.sender.id,
+          name: chat.sender.name
+        },
+        sent_at: chat.created_at.to_s
+      }
+    end
+    json_response(@chats)
   end
 
+  # POST /messages
   def create
-    puts "Params: #{@current_user.id}"
+    # Find the receiver
+    receiver = User.find(params[:user_id])
 
-    chat = @conversation.chats.new(chat_params)
-    chat.sender_id = @current_user.id
-    chat.receiver_id = params[:user_id]
+    # Find or create the conversation
+    @conversation = Conversation.where(sender: current_user, receiver: receiver)
+                                .or(Conversation.where(sender: receiver, receiver: current_user))
+                                .first_or_create
 
-    if chat.save
-      json_response(format_message(chat), status: :created)
+    @chat = @conversation.chats.build(chat_params)
+    @chat.sender = current_user
+
+    if @chat.save
+      response = {
+        id: @chat.id,
+        message: @chat.message,
+        sender: {
+          id: @chat.sender.id,
+          name: @chat.sender.name
+        },
+        sent_at: @chat.created_at.to_s,
+        conversation: {
+          id: @conversation.id,
+          with_user: {
+            id: receiver.id,
+            name: receiver.name,
+            photo_url: receiver.photo_url
+          }
+        }
+    }
+      json_response(response, :created)
     else
-      puts "Chat errors: #{chat.errors.inspect}"
-      render json: { error: Message.invalid_attributes(chat.errors) }, status: :unprocessable_entity
+      render json: @chat.errors, status: :unprocessable_entity
     end
   end
 
 
   private
 
-  def authorize_request
-    @current_user = AuthorizeApiRequest.new(request.headers).call[:user]
-    render json: { error: Message.unauthorized }, status: :unauthorized unless @current_user
+  def set_conversation
+    @conversation = Conversation.find(params[:conversation_id])
+  end
+
+  def authorize_user!
+    unless @conversation.sender == current_user || @conversation.receiver == current_user
+      render json: { error: Message.forbidden }, status: :forbidden
+    end
   end
 
   def chat_params
     params.require(:chat).permit(:message, :user_id)
-  end
-
-  def create_conversation(conversation_id)
-    sender_id = @current_user.id
-    receiver_id = params[:receiver_id]
-
-    # Create the conversation
-    conversation = Conversation.create(id: conversation_id, sender_id: sender_id, receiver_id: receiver_id)
-
-    # Ensure the conversation is saved successfully
-    unless conversation.persisted?
-      render json: { error: "Failed to create conversation" }, status: :unprocessable_entity
-    end
-
-    conversation
-  end
-
-  def set_conversation
-    conversation_id = params[:conversation_id]
-    @conversation = Conversation.find_by(id: conversation_id)
-
-    # If conversation does not exist, create it
-    @conversation ||= create_conversation(conversation_id)
-
-    # Ensure user can access the conversation
-    ensure_user_can_access_conversation
-  end
-
-  def ensure_user_can_access_conversation
-    unless current_user_can_access_conversation?(@conversation)
-      render json: { error: Message.unauthorized }, status: :forbidden
-    end
-  end
-
-  def current_user_can_access_conversation?(conversation)
-    conversation.sender == @current_user || conversation.receiver == @current_user
-  end
-
-  def format_message(message)
-    {
-      id: message.id,
-      message: message.message,
-      sender: {
-        id: message.sender.id,
-        name: message.sender.name
-      },
-      sent_at: message.created_at
-    }
   end
 end
